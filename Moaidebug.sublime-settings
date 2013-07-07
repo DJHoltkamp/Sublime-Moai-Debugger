@@ -1,0 +1,5 @@
+{
+    "breakpoint_scope": "moaidebug.breakpoint",
+    "current_line_scope": "moaidebug.current",
+    "port": 9000
+}

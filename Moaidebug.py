@@ -10,14 +10,14 @@ import webbrowser
 from xml.dom.minidom import parseString
 
 
-xdebug_current = None
+moaidebug_current = None
 original_layout = None
 debug_view = None
 protocol = None
 buffers = {}
-breakpoint_icon = '../Xdebug/icons/breakpoint'
-current_icon = '../Xdebug/icons/current'
-current_breakpoint_icon = '../Xdebug/icons/current_breakpoint'
+breakpoint_icon = 'icons/breakpoint'
+current_icon = 'icons/current'
+current_breakpoint_icon = 'icons/current_breakpoint'
 
 
 class DebuggerException(Exception):
@@ -160,9 +160,9 @@ class Protocol(object):
             raise ProtocolConnectionException('Could not create socket')
 
 
-class XdebugView(object):
+class MoaidebugView(object):
     '''
-    The XdebugView is sort of a normal view with some convenience methods.
+    The MoaidebugView is sort of a normal view with some convenience methods.
 
     See lookup_view.
     '''
@@ -201,7 +201,7 @@ class XdebugView(object):
             del self.breaks[row]
 
     def view_breakpoints(self):
-        self.view.add_regions('xdebug_breakpoint', self.lines(self.breaks.keys()), get_setting('breakpoint_scope'), breakpoint_icon, sublime.HIDDEN)
+        self.view.add_regions('moaidebug_breakpoint', self.lines(self.breaks.keys()), get_setting('breakpoint_scope'), breakpoint_icon, sublime.HIDDEN)
 
     def breakpoint_init(self):
         if not self.breaks:
@@ -267,7 +267,7 @@ class XdebugView(object):
         if line in self.breaks.keys():
             icon = current_breakpoint_icon
 
-        self.add_regions('xdebug_current_line', region, get_setting('current_line_scope'), icon, sublime.HIDDEN)
+        self.add_regions('moaidebug_current_line', region, get_setting('current_line_scope'), icon, sublime.HIDDEN)
         self.center(line)
 
     def add_context_data(self, propName, propType, propData):
@@ -299,17 +299,17 @@ class XdebugView(object):
 
             window = self.view.window()
             if window:
-                output = window.get_output_panel('xdebug_inspect')
+                output = window.get_output_panel('moaidebug_inspect')
                 edit = output.begin_edit()
                 output.erase(edit, sublime.Region(0, output.size()))
                 output.insert(edit, 0, data)
                 output.end_edit(edit)
-                window.run_command('show_panel', {"panel": 'output.xdebug_inspect'})
+                window.run_command('show_panel', {"panel": 'output.moaidebug_inspect'})
 
 
-class XdebugListenCommand(sublime_plugin.TextCommand):
+class MoaidebugListenCommand(sublime_plugin.TextCommand):
     '''
-    Start listening for Xdebug connections
+    Start listening for Moaidebug connections
     '''
     def run(self, edit):
         global protocol
@@ -323,7 +323,7 @@ class XdebugListenCommand(sublime_plugin.TextCommand):
             sublime.set_timeout(self.gui_callback, 0)
 
     def gui_callback(self):
-        sublime.status_message('Xdebug: Connected')
+        sublime.status_message('Moaidebug: Connected')
         init = protocol.read().firstChild
         uri = init.getAttribute('fileuri')
         #show_file(self.view.window(), uri)
@@ -331,7 +331,7 @@ class XdebugListenCommand(sublime_plugin.TextCommand):
         for view in buffers.values():
             view.breakpoint_init()
 
-        self.view.run_command('xdebug_continue', {'state': 'run'})
+        self.view.run_command('moaidebug_continue', {'state': 'run'})
 
     def is_enabled(self):
         if protocol:
@@ -339,7 +339,7 @@ class XdebugListenCommand(sublime_plugin.TextCommand):
         return True
 
 
-class XdebugClearAllBreakpointsCommand(sublime_plugin.TextCommand):
+class MoaidebugClearAllBreakpointsCommand(sublime_plugin.TextCommand):
     '''
     Clear breakpoints in all open buffers
     '''
@@ -349,7 +349,7 @@ class XdebugClearAllBreakpointsCommand(sublime_plugin.TextCommand):
             view.view_breakpoints()
 
 
-class XdebugBreakpointCommand(sublime_plugin.TextCommand):
+class MoaidebugBreakpointCommand(sublime_plugin.TextCommand):
     '''
     Toggle a breakpoint
     '''
@@ -363,25 +363,25 @@ class XdebugBreakpointCommand(sublime_plugin.TextCommand):
         view.view_breakpoints()
 
 
-class XdebugCommand(sublime_plugin.TextCommand):
+class MoaidebugCommand(sublime_plugin.TextCommand):
     '''
-    The Xdebug main quick panel menu
+    The Moaidebug main quick panel menu
     '''
     def run(self, edit):
         mapping = {
-            'xdebug_breakpoint': 'Add/Remove Breakpoint',
-            'xdebug_clear_all_breakpoints': 'Clear all Breakpoints',
+            'moaidebug_breakpoint': 'Add/Remove Breakpoint',
+            'moaidebug_clear_all_breakpoints': 'Clear all moai Breakpoints',
         }
 
         if protocol:
-            mapping['xdebug_clear'] = 'Stop debugging'
+            mapping['moaidebug_clear'] = 'Stop debugging moai'
         else:
-            mapping['xdebug_listen'] = 'Start debugging'
+            mapping['moaidebug_listen'] = 'Start debugging moai'
 
         if protocol and protocol.connected:
             mapping.update({
-                'xdebug_status': 'Status',
-                'xdebug_execute': 'Execute',
+                'moaidebug_status': 'Status',
+                'moaidebug_execute': 'Execute',
             })
 
         self.cmds = mapping.keys()
@@ -395,12 +395,12 @@ class XdebugCommand(sublime_plugin.TextCommand):
         command = self.cmds[index]
         self.view.run_command(command)
 
-        if protocol and command == 'xdebug_listen':
+        if protocol and command == 'moaidebug_listen':
             url = get_project_setting('url')
             if url:
-                webbrowser.open(url + '?XDEBUG_SESSION_START=sublime.xdebug')
+                webbrowser.open(url + '?MOAIDEBUG_SESSION_START=sublime.moaidebug')
             else:
-                sublime.status_message('Xdebug: No URL defined in project settings file.')
+                sublime.status_message('Moaidebug: No URL defined in project settings file.')
 
             global original_layout
             global debug_view
@@ -413,18 +413,18 @@ class XdebugCommand(sublime_plugin.TextCommand):
                 "cells": [[0, 0, 2, 1], [0, 1, 1, 2], [1, 1, 2, 2]]
             })
 
-        if command == 'xdebug_clear':
+        if command == 'moaidebug_clear':
             url = get_project_setting('url')
             if url:
-                webbrowser.open(url + '?XDEBUG_SESSION_STOP=sublime.xdebug')
+                webbrowser.open(url + '?MOAIDEBUG_SESSION_STOP=sublime.moaidebug')
             else:
-                sublime.status_message('Xdebug: No URL defined in project settings file.')
+                sublime.status_message('Moaidebug: No URL defined in project settings file.')
             window = sublime.active_window()
-            window.run_command('hide_panel', {"panel": 'output.xdebug_inspect'})
+            window.run_command('hide_panel', {"panel": 'output.moaidebug_inspect'})
             window.set_layout(original_layout)
 
 
-class XdebugContinueCommand(sublime_plugin.TextCommand):
+class MoaidebugContinueCommand(sublime_plugin.TextCommand):
     '''
     Continue execution menu and commands.
 
@@ -451,18 +451,18 @@ class XdebugContinueCommand(sublime_plugin.TextCommand):
         if type(state) == int:
             state = self.states.keys()[state]
 
-        global xdebug_current
+        global moaidebug_current
         reset_current()
 
         protocol.send(state)
         res = protocol.read().firstChild
 
         for child in res.childNodes:
-            if child.nodeName == 'xdebug:message':
+            if child.nodeName == 'moaidebug:message':
                 #print '>>>break ' + child.getAttribute('filename') + ':' + child.getAttribute('lineno')
-                sublime.status_message('Xdebug: breakpoint')
-                xdebug_current = show_file(self.view.window(), child.getAttribute('filename'))
-                xdebug_current.current(int(child.getAttribute('lineno')))
+                sublime.status_message('Moaidebug: breakpoint')
+                moaidebug_current = show_file(self.view.window(), child.getAttribute('filename'))
+                moaidebug_current.current(int(child.getAttribute('lineno')))
 
         if (res.getAttribute('status') == 'break'):
             # TODO stack_get
@@ -487,14 +487,14 @@ class XdebugContinueCommand(sublime_plugin.TextCommand):
                                 propValue = unicode('*****')
                             result = result + unicode(propName + ' [' + propType + '] = ' + str(propValue) + '\n')
                             result = result + getValues(child)
-                            if xdebug_current:
-                                xdebug_current.add_context_data(propName, propType, propValue)
+                            if moaidebug_current:
+                                moaidebug_current.add_context_data(propName, propType, propValue)
                 return result
 
             result = getValues(res)
             add_debug_info('context', result)
-            if xdebug_current:
-                xdebug_current.on_selection_modified()
+            if moaidebug_current:
+                moaidebug_current.on_selection_modified()
 
             protocol.send('stack_get')
             res = protocol.read().firstChild
@@ -511,23 +511,23 @@ class XdebugContinueCommand(sublime_plugin.TextCommand):
             add_debug_info('stack', result)
 
         if res.getAttribute('status') == 'stopping' or res.getAttribute('status') == 'stopped':
-            self.view.run_command('xdebug_clear')
-            self.view.run_command('xdebug_listen')
-            sublime.status_message('Xdebug: Page finished executing. Reload to continue debugging.')
+            self.view.run_command('moaidebug_clear')
+            self.view.run_command('moaidebug_listen')
+            sublime.status_message('Moaidebug: Page finished executing. Reload to continue debugging.')
 
     def is_enabled(self):
         if protocol and protocol.connected:
             return True
         if protocol:
-            sublime.status_message('Xdebug: Waiting for executing to start')
+            sublime.status_message('Moaidebug: Waiting for executing to start')
             return False
-        sublime.status_message('Xdebug: Not running')
+        sublime.status_message('Moaidebug: Not running')
         return False
 
 
-class XdebugClearCommand(sublime_plugin.TextCommand):
+class MoaidebugClearCommand(sublime_plugin.TextCommand):
     '''
-    Close the socket and stop listening to xdebug
+    Close the socket and stop listening to moaidebug
     '''
     def run(self, edit):
         global protocol
@@ -545,7 +545,7 @@ class XdebugClearCommand(sublime_plugin.TextCommand):
         return False
 
 
-class XdebugStatus(sublime_plugin.TextCommand):
+class MoaidebugStatus(sublime_plugin.TextCommand):
     '''
     DBGp status command
     '''
@@ -560,12 +560,12 @@ class XdebugStatus(sublime_plugin.TextCommand):
         return False
 
 
-class XdebugExecute(sublime_plugin.TextCommand):
+class MoaidebugExecute(sublime_plugin.TextCommand):
     '''
     Execute arbitrary DBGp command
     '''
     def run(self, edit):
-        self.view.window().show_input_panel('Xdebug Execute', '',
+        self.view.window().show_input_panel('Moaidebug Execute', '',
             self.on_done, self.on_change, self.on_cancel)
 
     def is_enabled(self):
@@ -582,12 +582,12 @@ class XdebugExecute(sublime_plugin.TextCommand):
         res = protocol.read().firstChild
 
         window = self.view.window()
-        output = window.get_output_panel('xdebug_execute')
+        output = window.get_output_panel('moaidebug_execute')
         edit = output.begin_edit()
         output.erase(edit, sublime.Region(0, output.size()))
         output.insert(edit, 0, res.toprettyxml())
         output.end_edit(edit)
-        window.run_command('show_panel', {"panel": 'output.xdebug_execute'})
+        window.run_command('show_panel', {"panel": 'output.moaidebug_execute'})
 
     def on_change(self, line):
         pass
@@ -633,16 +633,16 @@ class EventListener(sublime_plugin.EventListener):
 
 def lookup_view(v):
     '''
-    Convert a Sublime View into an XdebugView
+    Convert a Sublime View into an MoaidebugView
     '''
-    if isinstance(v, XdebugView):
+    if isinstance(v, MoaidebugView):
         return v
     if isinstance(v, sublime.View):
         id = v.buffer_id()
         if id in buffers:
             buffers[id].view = v
         else:
-            buffers[id] = XdebugView(v)
+            buffers[id] = MoaidebugView(v)
         return buffers[id]
     return None
 
@@ -679,39 +679,39 @@ def reset_current():
     '''
     Reset the current line marker
     '''
-    global xdebug_current
-    if xdebug_current:
-        xdebug_current.erase_regions('xdebug_current_line')
-        xdebug_current = None
+    global moaidebug_current
+    if moaidebug_current:
+        moaidebug_current.erase_regions('moaidebug_current_line')
+        moaidebug_current = None
 
 
 def get_project_setting(key):
     '''
     Get a project setting.
 
-    Xdebug project settings are stored in the sublime project file
+    Moaidebug project settings are stored in the sublime project file
     as a dictionary:
 
         "settings":
         {
-            "xdebug": { "key": "value", ... }
+            "moaidebug": { "key": "value", ... }
         }
     '''
     try:
         s = sublime.active_window().active_view().settings()
-        xdebug = s.get('xdebug')
-        if xdebug:
-            if key in xdebug:
-                return xdebug[key]
+        moaidebug = s.get('moaidebug')
+        if moaidebug:
+            if key in moaidebug:
+                return moaidebug[key]
     except:
         pass
 
 
 def get_setting(key):
     '''
-    Get Xdebug setting
+    Get Moaidebug setting
     '''
-    s = sublime.load_settings("Xdebug.sublime-settings")
+    s = sublime.load_settings("Moaidebug.sublime-settings")
     if s and s.has(key):
         return s.get(key)
 
@@ -726,10 +726,10 @@ def add_debug_info(name, data):
 
     if name == 'context':
         group = 1
-        fullName = "Xdebug Context"
+        fullName = "Moaidebug Context"
     if name == 'stack':
         group = 2
-        fullName = "Xdebug Stack"
+        fullName = "Moaidebug Stack"
 
     for v in window.views():
         if v.name() == fullName:
