@@ -1,0 +1,13 @@
+[
+    {
+        "caption": "Moai",
+        "mnemonic": "M",
+        "id": "moai",
+        "children":
+        [
+            { "command": "moaidebug_listen", "caption": "Start Debugging", "mnemonic": "D"},
+            { "command": "moaidebug_clear", "caption": "Stop Debugging", "mnemonic": "S"},
+            { "command": "moaidebug_test", "caption": "Test Function", "mnemonic": "T"}
+        ]
+    }
+]

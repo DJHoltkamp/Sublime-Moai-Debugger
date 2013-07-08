@@ -15,9 +15,9 @@ original_layout = None
 debug_view = None
 protocol = None
 buffers = {}
-breakpoint_icon = 'icons/breakpoint'
-current_icon = 'icons/current'
-current_breakpoint_icon = 'icons/current_breakpoint'
+breakpoint_icon = '../MoaiDebug/icons/breakpoint'
+current_icon = '../MoaiDebug/icons/current'
+current_breakpoint_icon = '../MoaiDebug/icons/current_breakpoint'
 
 
 class DebuggerException(Exception):
@@ -423,6 +423,11 @@ class MoaidebugCommand(sublime_plugin.TextCommand):
             window.run_command('hide_panel', {"panel": 'output.moaidebug_inspect'})
             window.set_layout(original_layout)
 
+        if command == 'moaidebug_test':
+            sublime.status_message('test')
+
+
+
 
 class MoaidebugContinueCommand(sublime_plugin.TextCommand):
     '''
@@ -568,6 +573,7 @@ class MoaidebugExecute(sublime_plugin.TextCommand):
         self.view.window().show_input_panel('Moaidebug Execute', '',
             self.on_done, self.on_change, self.on_cancel)
 
+
     def is_enabled(self):
         if protocol and protocol.connected:
             return True
@@ -592,6 +598,22 @@ class MoaidebugExecute(sublime_plugin.TextCommand):
     def on_change(self, line):
         pass
 
+    def on_cancel(self):
+        pass
+
+
+class MoaidebugTest(sublime_plugin.TextCommand):
+    '''
+    Execute arbitrary DBGp command
+    '''
+    def run(self, edit):
+        sublime.message_dialog(__file__)
+    def is_enabled(self):
+        return True
+    def on_done(self, line):
+        pass
+    def on_change(self, line):
+        pass
     def on_cancel(self):
         pass
 
