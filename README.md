@@ -1,6 +1,6 @@
 # Sublime Moai-Debug
 
-Sublime plug-in for interacting with the Moai.
+Sublime 3 plug-in for interacting with the Moai.
 
 ## Features
 

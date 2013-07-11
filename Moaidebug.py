@@ -7,6 +7,9 @@ import threading
 import types
 import json
 import webbrowser
+import subprocess
+import sys
+import time
 from xml.dom.minidom import parseString
 
 
@@ -15,9 +18,12 @@ original_layout = None
 debug_view = None
 protocol = None
 buffers = {}
-breakpoint_icon = '../MoaiDebug/icons/breakpoint'
-current_icon = '../MoaiDebug/icons/current'
-current_breakpoint_icon = '../MoaiDebug/icons/current_breakpoint'
+breakpoint_icon = 'breakpoint.png'
+current_icon = 'current.png'
+current_breakpoint_icon = 'current_breakpoint.png'
+
+is_debugging = False
+is_running = False
 
 
 class DebuggerException(Exception):
@@ -77,7 +83,7 @@ class Protocol(object):
     def read_until_null(self):
         if self.connected:
             while not '\x00' in self.buffer:
-                self.buffer += self.sock.recv(self.read_rate)
+                self.buffer += self.sock.recv(self.read_rate).decode("ascii")
             data, self.buffer = self.buffer.split('\x00', 1)
             return data
         else:
@@ -117,10 +123,10 @@ class Protocol(object):
             command += ' -- ' + base64.b64encode(data)
 
         try:
-            self.sock.send(command + '\x00')
+            self.sock.send(bytes(command, 'ascii') + bytes('\x00', 'ascii'))
             #print '--->', command
-        except Exception, x:
-            raise(ProtocolConnectionException, x)
+        except Exception:
+            raise(Exception)
 
     def accept(self):
         serv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -133,7 +139,7 @@ class Protocol(object):
                 serv.listen(1)
                 self.listening = True
                 self.sock = None
-            except Exception, x:
+            except Exception as x:
                 raise(ProtocolConnectionException, x)
 
             while self.listening:
@@ -201,7 +207,7 @@ class MoaidebugView(object):
             del self.breaks[row]
 
     def view_breakpoints(self):
-        self.view.add_regions('moaidebug_breakpoint', self.lines(self.breaks.keys()), get_setting('breakpoint_scope'), breakpoint_icon, sublime.HIDDEN)
+        self.view.add_regions('moaidebug_breakpoint', self.lines(list(self.breaks.keys())), get_setting('breakpoint_scope'), get_icon_path_for_file(breakpoint_icon), sublime.HIDDEN)
 
     def breakpoint_init(self):
         if not self.breaks:
@@ -215,22 +221,25 @@ class MoaidebugView(object):
     def breakpoint_clear(self):
         if not self.breaks:
             return
-        for row in self.breaks.keys():
+        key_list = list(self.breaks.keys())
+        for row in key_list:
             self.del_breakpoint(row)
 
     def uri(self):
         return 'file://' + os.path.realpath(self.view.file_name())
 
     def lines(self, data=None):
+        print("data----- ", data);
+
         lines = []
         if data is None:
             regions = self.view.sel()
         else:
-            if type(data) != types.ListType:
+            if not isinstance(data, list):
                 data = [data]
             regions = []
             for item in data:
-                if type(item) == types.IntType or item.isdigit():
+                if isinstance(item, int) or (isinstance(item, str) and item.isdigit()):
                     regions.append(self.view.line(self.view.text_point(int(item) - 1, 0)))
                 else:
                     regions.append(item)
@@ -239,7 +248,7 @@ class MoaidebugView(object):
         return [self.view.line(line) for line in lines]
 
     def rows(self, lines):
-        if not type(lines) == types.ListType:
+        if not isinstance(lines, list):
             lines = [lines]
         return [self.view.rowcol(line.begin())[0] + 1 for line in lines]
 
@@ -262,10 +271,10 @@ class MoaidebugView(object):
             self.current_line = line
             return
         region = self.lines(line)
-        icon = current_icon
+        icon = get_icon_path_for_file(current_icon)
 
         if line in self.breaks.keys():
-            icon = current_breakpoint_icon
+            icon = get_icon_path_for_file(current_breakpoint_icon)
 
         self.add_regions('moaidebug_current_line', region, get_setting('current_line_scope'), icon, sublime.HIDDEN)
         self.center(line)
@@ -307,14 +316,15 @@ class MoaidebugView(object):
                 window.run_command('show_panel', {"panel": 'output.moaidebug_inspect'})
 
 
-class MoaidebugListenCommand(sublime_plugin.TextCommand):
+class MoaidebugRunDebugCommand(sublime_plugin.TextCommand):
     '''
     Start listening for Moaidebug connections
     '''
     def run(self, edit):
+        global is_debugging 
+        is_debugging = True
         global protocol
         protocol = Protocol()
-
         threading.Thread(target=self.thread_callback).start()
 
     def thread_callback(self):
@@ -334,7 +344,9 @@ class MoaidebugListenCommand(sublime_plugin.TextCommand):
         self.view.run_command('moaidebug_continue', {'state': 'run'})
 
     def is_enabled(self):
-        if protocol:
+        global is_debugging
+        global is_running
+        if protocol or is_debugging or is_running:
             return False
         return True
 
@@ -347,6 +359,21 @@ class MoaidebugClearAllBreakpointsCommand(sublime_plugin.TextCommand):
         for view in buffers.values():
             view.breakpoint_clear()
             view.view_breakpoints()
+
+
+class MoaidebugHelpCommand(sublime_plugin.TextCommand):
+    '''
+    Clear breakpoints in all open buffers
+    '''
+    def run(self, edit):
+        help_message = '''
+Welcome to Moai Debug for Sublime:
+1. Make sure Moai is in your system PATH 
+2. Make sure this is installed under "Packages/Moai Debugger/"
+3. Make sure your Moai project has a Main.lua in the root folder
+4. This is a Sublime 3 Plug-in for OSX. Other platforms may work but are untested
+        '''
+        sublime.message_dialog(help_message)
 
 
 class MoaidebugBreakpointCommand(sublime_plugin.TextCommand):
@@ -423,9 +450,6 @@ class MoaidebugCommand(sublime_plugin.TextCommand):
             window.run_command('hide_panel', {"panel": 'output.moaidebug_inspect'})
             window.set_layout(original_layout)
 
-        if command == 'moaidebug_test':
-            sublime.status_message('test')
-
 
 
 
@@ -453,7 +477,7 @@ class MoaidebugContinueCommand(sublime_plugin.TextCommand):
     def callback(self, state):
         if state == -1:
             return
-        if type(state) == int:
+        if isinstance(state, int):
             state = self.states.keys()[state]
 
         global moaidebug_current
@@ -480,7 +504,7 @@ class MoaidebugContinueCommand(sublime_plugin.TextCommand):
                 for child in node.childNodes:
                     if child.nodeName == 'property':
                         propName = base64.b64decode(child.getAttribute('fullname'))
-                        print propName
+                        print(propName)
                         propType = unicode(child.getAttribute('type'))
                         propValue = None
                         try:
@@ -530,7 +554,7 @@ class MoaidebugContinueCommand(sublime_plugin.TextCommand):
         return False
 
 
-class MoaidebugClearCommand(sublime_plugin.TextCommand):
+class MoaidebugStopDebugCommand(sublime_plugin.TextCommand):
     '''
     Close the socket and stop listening to moaidebug
     '''
@@ -545,7 +569,8 @@ class MoaidebugClearCommand(sublime_plugin.TextCommand):
             protocol = None
 
     def is_enabled(self):
-        if protocol:
+        global is_debugging
+        if protocol and is_debugging:
             return True
         return False
 
@@ -601,13 +626,67 @@ class MoaidebugExecute(sublime_plugin.TextCommand):
     def on_cancel(self):
         pass
 
+class MoaidebugJustRun(sublime_plugin.TextCommand):
+
+
+    def run(self, edit):
+        global is_running 
+        is_running = True;
+        sublime.active_window().run_command('show_panel', {"panel": "console"})       
+        sublime.active_window().run_command('save_all')
+        folders = sublime.active_window().folders()
+        print (len(folders))
+        if len(folders) > 0:
+            folder = folders[0] + '/'
+            RunToConsole('moai', folder)
+
+
+    def is_enabled(self):
+        global is_debugging
+        global is_running
+        return not is_running and not is_debugging
+    def on_done(self, line):
+        pass
+    def on_change(self, line):
+        pass
+    def on_cancel(self):
+        pass
+
+class MoaidebugJustStop(sublime_plugin.TextCommand):
+    '''
+    Execute arbitrary DBGp command
+    '''
+    def run(self, edit):
+        global is_running
+        is_running = False
+        subprocess.Popen(['killall', 'moai'], stdout=subprocess.PIPE);
+        sublime.active_window().run_command('hide_panel', {"panel": "console"})     
+    def is_enabled(self):
+        return is_running
+    def on_done(self, line):
+        pass
+    def on_change(self, line):
+        pass
+    def on_cancel(self):
+        pass
+
+
 
 class MoaidebugTest(sublime_plugin.TextCommand):
     '''
     Execute arbitrary DBGp command
     '''
     def run(self, edit):
-        sublime.message_dialog(__file__)
+        
+        sublime.message_dialog(', '.join(sublime.active_window().folders()))
+
+        '''
+        sublime.active_window().run_command('save_all');
+        
+        subprocess.Popen(['moai', 'main.lua'], shell=True, cwd='/Users/davidholtkamp/Dropbox/Deimos/Lua/lua/')
+        
+        
+        '''
     def is_enabled(self):
         return True
     def on_done(self, line):
@@ -736,6 +815,35 @@ def get_setting(key):
     s = sublime.load_settings("Moaidebug.sublime-settings")
     if s and s.has(key):
         return s.get(key)
+
+
+def get_icon_path_for_file(file_name):
+    path = 'Packages/Moai Debugger/icons/' + file_name 
+    return path
+
+
+
+def RunToConsole(args, current_dir = None):
+    sublime.set_timeout_async(lambda: run_in_background(args, current_dir), 0)
+    
+
+def run_in_background(args, current_dir):
+    proc = None
+    if current_dir is None:
+        proc = subprocess.Popen(['moai', 'main.lua'], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    else:
+        proc = subprocess.Popen(['moai', 'main.lua'],  cwd=current_dir, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    while proc.poll() is None:
+        try:
+            data = proc.stdout.readline().decode(encoding='UTF-8')
+            print(data, end="")
+        except:
+            print("process ended...")
+            proc = None
+            return;
+    print("process ended...")
+    proc = None
+    return
 
 
 def add_debug_info(name, data):
