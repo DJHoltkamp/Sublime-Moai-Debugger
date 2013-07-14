@@ -9,7 +9,7 @@
             { "command": "moaidebug_just_stop", "caption": "Stop Moai Program", "mnemonic": "F"},
             { "caption": "-" },
             { "command": "moaidebug_run_debug", "caption": "Start Debugging", "mnemonic": "D"},
-            { "command": "moaidebug_stop_deubg", "caption": "Stop Debugging", "mnemonic": "S"},
+            { "command": "moaidebug_stop_debug", "caption": "Stop Debugging", "mnemonic": "S"},
             { "command": "moaidebug_clear_all_breakpoints", "caption": "Clear All Breakpoints", "mnemonic": "S"},
             { "caption": "-" },
             { "command": "moaidebug_help", "caption": "Moai Help", "mnemonic": "H"},

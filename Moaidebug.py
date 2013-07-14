@@ -51,7 +51,7 @@ class Protocol(object):
         self.clear()
 
     def clear(self):
-        self.buffer = ''
+        self.buffer = bytearray()
         self.connected = False
         self.listening = False
         self.server = None
@@ -82,12 +82,37 @@ class Protocol(object):
 
     def read_until_null(self):
         if self.connected:
-            while not '\x00' in self.buffer:
-                self.buffer += self.sock.recv(self.read_rate).decode("ascii")
-            data, self.buffer = self.buffer.split('\x00', 1)
+            while self.bytearray_contains_0(self.buffer) == False:
+                self.buffer += self.sock.recv(self.read_rate)
+                print('Raw Buffer:', self.buffer)
+                
+            index = 0
+            for c in self.buffer:
+                if c == 0:
+                    # Just a 0 was found
+                    if index == 0:
+                        self.buffer = bytearray()
+                        print ('returning blank')
+                        return ''
+                    string_to_return = self.buffer[:index].decode("ascii")
+                    if len(self.buffer) == index + 1:
+                        self.buffer = bytearray()
+                    else:
+                        self.buffer = self.buffer[index + 1:]
+                    print ("returning:'", string_to_return, "'  Leaving:", self.buffer)
+                    return string_to_return
+                index = index + 1
+
             return data
         else:
             raise(ProtocolConnectionException, "Not Connected")
+
+
+    def bytearray_contains_0(self, b_array):
+        for c in b_array:
+            if c == 0:
+                return True
+        return False
 
     def read_data(self):
         length = self.read_until_null()
@@ -104,6 +129,7 @@ class Protocol(object):
         return document
 
     def send(self, command, *args, **kwargs):
+        print("START SEND");
         if 'data' in kwargs:
             data = kwargs['data']
             del kwargs['data']
@@ -123,6 +149,7 @@ class Protocol(object):
             command += ' -- ' + base64.b64encode(data)
 
         try:
+            print(command)
             self.sock.send(bytes(command, 'ascii') + bytes('\x00', 'ascii'))
             #print '--->', command
         except Exception:
@@ -143,6 +170,7 @@ class Protocol(object):
                 raise(ProtocolConnectionException, x)
 
             while self.listening:
+                time.sleep(.1)
                 try:
                     self.sock, address = serv.accept()
                     self.listening = False
@@ -151,7 +179,7 @@ class Protocol(object):
 
             if self.sock:
                 self.connected = True
-                self.sock.settimeout(None)
+                self.sock.settimeout(8)
             else:
                 self.connected = False
                 self.listening = False
@@ -214,9 +242,11 @@ class MoaidebugView(object):
             return
         uri = self.uri()
         for row in self.breaks:
+            print("breakpoint Set ", uri , " ", row)
             protocol.send('breakpoint_set', t='line', f=uri, n=row)
             res = protocol.read().firstChild
             self.breaks[row]['id'] = res.getAttribute('id')
+            print ("Breakpoint ID: ", self.breaks[row]['id'])
 
     def breakpoint_clear(self):
         if not self.breaks:
@@ -229,7 +259,6 @@ class MoaidebugView(object):
         return 'file://' + os.path.realpath(self.view.file_name())
 
     def lines(self, data=None):
-        print("data----- ", data);
 
         lines = []
         if data is None:
@@ -321,11 +350,44 @@ class MoaidebugRunDebugCommand(sublime_plugin.TextCommand):
     Start listening for Moaidebug connections
     '''
     def run(self, edit):
-        global is_debugging 
+        global is_debugging
         is_debugging = True
         global protocol
         protocol = Protocol()
+
+        global original_layout
+        global debug_view
+        window = sublime.active_window()
+        original_layout = window.get_layout()
+        debug_view = window.active_view()
+        window.set_layout({
+            "cols": [0.0, 0.5, 1.0],
+            "rows": [0.0, 0.7, 1.0],
+            "cells": [[0, 0, 2, 1], [0, 1, 1, 2], [1, 1, 2, 2]]
+        })
+
+
+        sublime.active_window().run_command('save_all')
+        sublime.active_window().run_command('show_panel', {"panel": "console"})    
         threading.Thread(target=self.thread_callback).start()
+
+        # Start program debugging using included debug library - First we nee to make our lua launch file      
+        folders = sublime.active_window().folders()
+        if len(folders) == 0:
+            print('Unable to find code directory')
+            return;
+
+        main_folder = folders[0] + '/'
+        launch_folder = sublime.packages_path() + '/Moai Debugger/lua_launchers/'
+        launch_file = launch_folder + 'launch.lua'
+        out_file = open(launch_file, "w+")
+        out_file.write('package.path = "' + launch_folder +  '?.lua;" .. package.path\n')
+        out_file.write('require("debugger")("127.0.0.1", 9000, nil, nil, nil, "' + main_folder + '")\n')
+        out_file.write('dofile("main.lua")\n')
+        out_file.close()
+        RunToConsole(['moai', launch_file], main_folder)
+
+
 
     def thread_callback(self):
         protocol.accept()
@@ -336,7 +398,7 @@ class MoaidebugRunDebugCommand(sublime_plugin.TextCommand):
         sublime.status_message('Moaidebug: Connected')
         init = protocol.read().firstChild
         uri = init.getAttribute('fileuri')
-        #show_file(self.view.window(), uri)
+        print("The URI", uri)
 
         for view in buffers.values():
             view.breakpoint_init()
@@ -361,6 +423,9 @@ class MoaidebugClearAllBreakpointsCommand(sublime_plugin.TextCommand):
             view.view_breakpoints()
 
 
+
+
+
 class MoaidebugHelpCommand(sublime_plugin.TextCommand):
     '''
     Clear breakpoints in all open buffers
@@ -370,7 +435,7 @@ class MoaidebugHelpCommand(sublime_plugin.TextCommand):
 Welcome to Moai Debug for Sublime:
 1. Make sure Moai is in your system PATH 
 2. Make sure this is installed under "Packages/Moai Debugger/"
-3. Make sure your Moai project has a Main.lua in the root folder
+3. Make sure your Moai project has a main.lua in the root folder
 4. This is a Sublime 3 Plug-in for OSX. Other platforms may work but are untested
         '''
         sublime.message_dialog(help_message)
@@ -500,21 +565,27 @@ class MoaidebugContinueCommand(sublime_plugin.TextCommand):
             result = ''
 
             def getValues(node):
-                result = unicode('')
+                result = str('')
                 for child in node.childNodes:
                     if child.nodeName == 'property':
-                        propName = base64.b64decode(child.getAttribute('fullname'))
-                        print(propName)
-                        propType = unicode(child.getAttribute('type'))
+                        propName = base64.b64decode(child.getAttribute('fullname')).decode('utf-8')
+                        print("Name!:", propName)
+                        propType = str(child.getAttribute('type'))
                         propValue = None
+                        
                         try:
-                            propValue = unicode(' '.join(base64.b64decode(t.data) for t in child.childNodes if t.nodeType == t.TEXT_NODE or t.nodeType == t.CDATA_SECTION_NODE))
+
+                            propValue = str(' '.join(base64.b64decode(t.data.strip()).decode('utf-8') for t in child.childNodes if t.nodeType == t.TEXT_NODE or t.nodeType == t.CDATA_SECTION_NODE))
                         except:
-                            propValue = unicode(' '.join(t.data for t in child.childNodes if t.nodeType == t.TEXT_NODE or t.nodeType == t.CDATA_SECTION_NODE))
+                            for t in child.childNodes:
+                                if t.nodeType == t.TEXT_NODE or t.nodeType == t.CDATA_SECTION_NODE:
+                                    print ('MY DATA:"' , t.data.strip(), '"')
+                            propValue = str(' '.join(t.data for t in child.childNodes if t.nodeType == t.TEXT_NODE or t.nodeType == t.CDATA_SECTION_NODE))
+
                         if propName:
                             if propName.lower().find('password') != -1:
-                                propValue = unicode('*****')
-                            result = result + unicode(propName + ' [' + propType + '] = ' + str(propValue) + '\n')
+                                propValue = str('*****')
+                            result = result + str(propName + ' [' + propType + '] = ' + str(propValue) + '\n')
                             result = result + getValues(child)
                             if moaidebug_current:
                                 moaidebug_current.add_context_data(propName, propType, propValue)
@@ -527,7 +598,7 @@ class MoaidebugContinueCommand(sublime_plugin.TextCommand):
 
             protocol.send('stack_get')
             res = protocol.read().firstChild
-            result = unicode('')
+            result = str('')
             for child in res.childNodes:
                 if child.nodeName == 'stack':
                     propWhere = child.getAttribute('where')
@@ -535,7 +606,7 @@ class MoaidebugContinueCommand(sublime_plugin.TextCommand):
                     propType = child.getAttribute('type')
                     propFile = child.getAttribute('filename')
                     propLine = child.getAttribute('lineno')
-                    result = result + unicode('{level:>3}: {type:<10} {where:<10} {filename}:{lineno}\n' \
+                    result = result + str('{level:>3}: {type:<10} {where:<10} {filename}:{lineno}\n' \
                                               .format(level=propLevel, type=propType, where=propWhere, lineno=propLine, filename=propFile))
             add_debug_info('stack', result)
 
@@ -561,8 +632,15 @@ class MoaidebugStopDebugCommand(sublime_plugin.TextCommand):
     def run(self, edit):
         global protocol
         try:
+            window = sublime.active_window()
+            window.run_command('hide_panel', {"panel": 'output.moaidebug_inspect'})
+            window.set_layout(original_layout)
             protocol.clear()
             reset_current()
+            subprocess.Popen(['killall', 'moai'], stdout=subprocess.PIPE);
+            sublime.active_window().run_command('hide_panel', {"panel": "console"})   
+            global is_debugging
+            is_debugging = False
         except:
             pass
         finally:
@@ -635,10 +713,9 @@ class MoaidebugJustRun(sublime_plugin.TextCommand):
         sublime.active_window().run_command('show_panel', {"panel": "console"})       
         sublime.active_window().run_command('save_all')
         folders = sublime.active_window().folders()
-        print (len(folders))
         if len(folders) > 0:
             folder = folders[0] + '/'
-            RunToConsole('moai', folder)
+            RunToConsole(['moai', 'main.lua'], folder)
 
 
     def is_enabled(self):
@@ -678,7 +755,23 @@ class MoaidebugTest(sublime_plugin.TextCommand):
     '''
     def run(self, edit):
         
-        sublime.message_dialog(', '.join(sublime.active_window().folders()))
+
+        folders = sublime.active_window().folders()
+        if len(folders) == 0:
+            print('Unable to find code directory')
+            return;
+
+        main_folder = folders[0] + '/'
+
+        launch_folder = sublime.packages_path() + '/Moai Debugger/lua_launchers/'
+        launch_file = launch_folder + 'launch.lua'
+        out_file = open(launch_file, "w+")
+        out_file.write('package.path = "' + launch_folder +  '?.lua;" .. package.path\n')
+        out_file.write('require("debugger")("127.0.0.1", 9000)\n')
+        out_file.write('dofile("main.lua")\n')
+        out_file.close()
+        RunToConsole(['moai', launch_file], main_folder)
+       # sublime.message_dialog(sublime.packages_path() + '/lua_launchers/')
 
         '''
         sublime.active_window().run_command('save_all');
@@ -830,9 +923,9 @@ def RunToConsole(args, current_dir = None):
 def run_in_background(args, current_dir):
     proc = None
     if current_dir is None:
-        proc = subprocess.Popen(['moai', 'main.lua'], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        proc = subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     else:
-        proc = subprocess.Popen(['moai', 'main.lua'],  cwd=current_dir, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        proc = subprocess.Popen(args,  cwd=current_dir, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     while proc.poll() is None:
         try:
             data = proc.stdout.readline().decode(encoding='UTF-8')
@@ -844,6 +937,31 @@ def run_in_background(args, current_dir):
     print("process ended...")
     proc = None
     return
+
+
+class MoaidebugAddDebugInfoCommand(sublime_plugin.TextCommand):
+    def run(self, edit, data = None, name = 'none'):
+        window = sublime.active_window()
+        v = None
+        for v in window.views():
+            if v.name() == name:
+                found = True
+                break
+
+        if found:
+            v.erase(edit, sublime.Region(0, v.size()))
+            v.insert(edit, 0, data)    
+
+    def is_enabled(self):
+        return True
+    def on_done(self, line):
+        pass
+    def on_change(self, line):
+        pass
+    def on_cancel(self):
+        pass
+
+
 
 
 def add_debug_info(name, data):
@@ -877,10 +995,8 @@ def add_debug_info(name, data):
     if found:
         v.set_read_only(False)
         window.set_view_index(v, group, 0)
-        edit = v.begin_edit()
-        v.erase(edit, sublime.Region(0, v.size()))
-        v.insert(edit, 0, data)
-        v.end_edit(edit)
+        print(type(data))
+        v.run_command('moaidebug_add_debug_info', {'name':fullName, 'data':data})
         v.set_read_only(True)
 
     window.focus_group(0)
