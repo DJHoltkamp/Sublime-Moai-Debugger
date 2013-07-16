@@ -12,7 +12,17 @@ Sublime 3 plug-in for interacting with the Moai.
 
 ## Quick start
 
-NOTE: We are working to get the install to work right with the package manager. For now, you must manually place the debugger in the Packages folder under the name Moai Debugger.
+We recommend using the PackageControl plugin to install this plugin:
+http://wbond.net/sublime_packages/package_control/installation#ST3
+
+Be sure to follow the SublimeText 3 instructions
+
+
+After Install:
+1. Make sure Moai is in your system PATH 
+2. Make sure this is installed under "Packages/Moai Debugger/" (This will be automatic if you used package control)
+3. Make sure your Moai project has a main.lua in the root folder
+4. This is a Sublime 3 Plug-in for OSX. Other platforms may work but are untested
 
 ### Debugger control menu
 

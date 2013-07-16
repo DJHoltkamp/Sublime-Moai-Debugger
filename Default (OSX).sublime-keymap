@@ -2,6 +2,10 @@
     {"keys": ["shift+f8"], "command": "moaidebug" },
     {"keys": ["f8"], "command": "moaidebug_continue" },
     {"keys": ["ctrl+f8"], "command": "moaidebug_breakpoint"},
+
+    { "command": "moaidebug_just_run",  "keys":["ctrl+r"]},
+    { "command": "moaidebug_run_debug", "keys":["ctrl+d"]},
+    { "command": "moaidebug_just_stop", "keys":["ctrl+s"]},
 	{"keys": ["ctrl+shift+f5"], "command": "moaidebug_continue", "args": {"state": "run"}},
 	{"keys": ["ctrl+shift+f6"], "command": "moaidebug_continue", "args": {"state": "step_over"}},
 	{"keys": ["ctrl+shift+f7"], "command": "moaidebug_continue", "args": {"state": "step_into"}},

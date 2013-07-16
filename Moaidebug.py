@@ -12,7 +12,10 @@ import sys
 import time
 from xml.dom.minidom import parseString
 
-deubggin_debugger = False
+
+# This will turn on debug messages for the dubgger itself
+debugging_debugger = False
+
 moaidebug_current = None
 original_layout = None
 debug_view = None
@@ -38,10 +41,9 @@ class ProtocolConnectionException(ProtocolException):
     pass
 
 
+
+# This class handles all communication with the Debugger in DBGp Protocol language
 class Protocol(object):
-    '''
-    Represents DBGp Protocol Language
-    '''
 
     read_rate = 1024
     port = 9000
@@ -80,7 +82,10 @@ class Protocol(object):
 
     transaction_id = property(**transaction_id())
 
+
+    # All of the protocols responses go Length + NULL + Message + NULL
     def read_until_null(self):
+        global debugging_debugger
         if self.connected:
             while self.bytearray_contains_0(self.buffer) == False:
 
@@ -89,8 +94,7 @@ class Protocol(object):
                 except:
                     raise Exception('error', 'timeout')
 
-                global deubggin_debugger
-                if deubggin_debugger:
+                if debugging_debugger:
                     print('Raw Buffer:', self.buffer)
                 
             index = 0
@@ -107,8 +111,8 @@ class Protocol(object):
                     else:
                         self.buffer = self.buffer[index + 1:]
 
-                    global deubggin_debugger
-                    if deubggin_debugger:    
+                    
+                    if debugging_debugger:    
                         print ("returning:'", string_to_return, "'  Leaving:", self.buffer)
                     return string_to_return
                 index = index + 1
@@ -134,13 +138,12 @@ class Protocol(object):
 
     def read(self):
         data = self.read_data()
-        #print '<---', data
         document = parseString(data)
         return document
 
     def send(self, command, *args, **kwargs):
-        global deubggin_debugger
-        if deubggin_debugger:
+        global debugging_debugger
+        if debugging_debugger:
             print("START SEND");
         if 'data' in kwargs:
             data = kwargs['data']
@@ -161,8 +164,8 @@ class Protocol(object):
             command += ' -- ' + base64.b64encode(data)
 
         try:
-            global deubggin_debugger
-            if deubggin_debugger:
+            
+            if debugging_debugger:
                 print(command)
             self.sock.send(bytes(command, 'ascii') + bytes('\x00', 'ascii'))
             #print '--->', command
@@ -208,12 +211,8 @@ class Protocol(object):
             raise ProtocolConnectionException('Could not create socket')
 
 
+# View which takes care of showing the breakpoint. I believe this overloads all the views in Sublime
 class MoaidebugView(object):
-    '''
-    The MoaidebugView is sort of a normal view with some convenience methods.
-
-    See lookup_view.
-    '''
     def __init__(self, view):
         self.view = view
         self.current_line = None
@@ -327,15 +326,11 @@ class MoaidebugView(object):
         self.center(line)
 
     def add_context_data(self, propName, propType, propData):
-        '''
-        Store context data
-        '''
         self.context_data[propName] = {'type': propType, 'data': propData}
 
+    # This is still not working that I've seen
+    # TODO: Add this for local and global variables in lua
     def on_selection_modified(self):
-        '''
-        Show selected variable in an output panel when clicked
-        '''
         if protocol and protocol.connected and self.context_data:
             data = ''
             point = self.view.sel()[0].a
@@ -363,10 +358,8 @@ class MoaidebugView(object):
                 window.run_command('show_panel', {"panel": 'output.moaidebug_inspect'})
 
 
+# Launches Moai and then listens for the debugger connection back to the IDE
 class MoaidebugRunDebugCommand(sublime_plugin.TextCommand):
-    '''
-    Start listening for Moaidebug connections
-    '''
     def run(self, edit):
         global is_debugging
         is_debugging = True
@@ -415,8 +408,8 @@ class MoaidebugRunDebugCommand(sublime_plugin.TextCommand):
         sublime.status_message('Moaidebug: Connected')
         init = protocol.read().firstChild
         uri = init.getAttribute('fileuri')
-        global deubggin_debugger
-        if deubggin_debugger:
+        global debugging_debugger
+        if debugging_debugger:
             print("The URI", uri)
 
         for view in buffers.values():
@@ -433,10 +426,9 @@ class MoaidebugRunDebugCommand(sublime_plugin.TextCommand):
         return True
 
 
+
+
 class MoaidebugClearAllBreakpointsCommand(sublime_plugin.TextCommand):
-    '''
-    Clear breakpoints in all open buffers
-    '''
     def run(self, edit):
         for view in buffers.values():
             view.breakpoint_clear()
@@ -447,9 +439,6 @@ class MoaidebugClearAllBreakpointsCommand(sublime_plugin.TextCommand):
 
 
 class MoaidebugHelpCommand(sublime_plugin.TextCommand):
-    '''
-    Clear breakpoints in all open buffers
-    '''
     def run(self, edit):
         help_message = '''
 Welcome to Moai Debug for Sublime:
@@ -461,10 +450,8 @@ Welcome to Moai Debug for Sublime:
         sublime.message_dialog(help_message)
 
 
+# Toggles breakpoints on and off
 class MoaidebugBreakpointCommand(sublime_plugin.TextCommand):
-    '''
-    Toggle a breakpoint
-    '''
     def run(self, edit):
         view = lookup_view(self.view)
         for row in view.rows(view.lines()):
@@ -475,69 +462,10 @@ class MoaidebugBreakpointCommand(sublime_plugin.TextCommand):
         view.view_breakpoints()
 
 
-class MoaidebugCommand(sublime_plugin.TextCommand):
-    '''
-    The Moaidebug main quick panel menu
-    '''
-    def run(self, edit):
-        mapping = {
-            'moaidebug_breakpoint': 'Add/Remove Breakpoint',
-            'moaidebug_clear_all_breakpoints': 'Clear all moai Breakpoints',
-        }
-
-        if protocol:
-            mapping['moaidebug_clear'] = 'Stop debugging moai'
-        else:
-            mapping['moaidebug_listen'] = 'Start debugging moai'
-
-        if protocol and protocol.connected:
-            mapping.update({
-                'moaidebug_status': 'Status',
-                'moaidebug_execute': 'Execute',
-            })
-
-        self.cmds = mapping.keys()
-        self.items = mapping.values()
-        self.view.window().show_quick_panel(self.items, self.callback)
-
-    def callback(self, index):
-        if index == -1:
-            return
-
-        command = self.cmds[index]
-        self.view.run_command(command)
-
-        if protocol and command == 'moaidebug_listen':
-            url = get_project_setting('url')
-            if url:
-                webbrowser.open(url + '?MOAIDEBUG_SESSION_START=sublime.moaidebug')
-            else:
-                sublime.status_message('Moaidebug: No URL defined in project settings file.')
-
-            global original_layout
-            global debug_view
-            window = sublime.active_window()
-            original_layout = window.get_layout()
-            debug_view = window.active_view()
-            window.set_layout({
-                "cols": [0.0, 0.5, 1.0],
-                "rows": [0.0, 0.7, 1.0],
-                "cells": [[0, 0, 2, 1], [0, 1, 1, 2], [1, 1, 2, 2]]
-            })
-
-        if command == 'moaidebug_clear':
-            url = get_project_setting('url')
-            if url:
-                webbrowser.open(url + '?MOAIDEBUG_SESSION_STOP=sublime.moaidebug')
-            else:
-                sublime.status_message('Moaidebug: No URL defined in project settings file.')
-            window = sublime.active_window()
-            window.run_command('hide_panel', {"panel": 'output.moaidebug_inspect'})
-            window.set_layout(original_layout)
-
-
-
-
+# This command is used for many of the debugging features. Some I have not yet implemented in the menus
+# A large portion of this code now runs on a timed callback in the main thread to avoid having the menus
+# lock when there are no breakpoints. This is due to the run command not getting a response until a 
+# breakpoint is hit
 class MoaidebugContinueCommand(sublime_plugin.TextCommand):
     '''
     Continue execution menu and commands.
@@ -570,71 +498,7 @@ class MoaidebugContinueCommand(sublime_plugin.TextCommand):
         global moaidebug_current
         reset_current()
         protocol.send(state)
-        #res = protocol.read().firstChild
 
-        # for child in res.childNodes:
-        #     if child.nodeName == 'moaidebug:message':
-        #         #print '>>>break ' + child.getAttribute('filename') + ':' + child.getAttribute('lineno')
-        #         sublime.status_message('Moaidebug: breakpoint')
-        #         moaidebug_current = show_file(self.view.window(), child.getAttribute('filename'))
-        #         moaidebug_current.current(int(child.getAttribute('lineno')))
-
-        # if (res.getAttribute('status') == 'break'):
-        #     # TODO stack_get
-        #     protocol.send('context_get')
-        #     res = protocol.read().firstChild
-        #     result = ''
-
-        #     def getValues(node):
-        #         result = str('')
-        #         for child in node.childNodes:
-        #             if child.nodeName == 'property':
-        #                 propName = base64.b64decode(child.getAttribute('fullname')).decode('utf-8')
-        #                 print("Name!:", propName)
-        #                 propType = str(child.getAttribute('type'))
-        #                 propValue = None
-                        
-        #                 try:
-
-        #                     propValue = str(' '.join(base64.b64decode(t.data.strip()).decode('utf-8') for t in child.childNodes if t.nodeType == t.TEXT_NODE or t.nodeType == t.CDATA_SECTION_NODE))
-        #                 except:
-        #                     for t in child.childNodes:
-        #                         if t.nodeType == t.TEXT_NODE or t.nodeType == t.CDATA_SECTION_NODE:
-        #                             print ('MY DATA:"' , t.data.strip(), '"')
-        #                     propValue = str(' '.join(t.data for t in child.childNodes if t.nodeType == t.TEXT_NODE or t.nodeType == t.CDATA_SECTION_NODE))
-
-        #                 if propName:
-        #                     if propName.lower().find('password') != -1:
-        #                         propValue = str('*****')
-        #                     result = result + str(propName + ' [' + propType + '] = ' + str(propValue) + '\n')
-        #                     result = result + getValues(child)
-        #                     if moaidebug_current:
-        #                         moaidebug_current.add_context_data(propName, propType, propValue)
-        #         return result
-
-        #     result = getValues(res)
-        #     add_debug_info('context', result)
-        #     if moaidebug_current:
-        #         moaidebug_current.on_selection_modified()
-
-        #     protocol.send('stack_get')
-        #     res = protocol.read().firstChild
-        #     result = str('')
-        #     for child in res.childNodes:
-        #         if child.nodeName == 'stack':
-        #             propWhere = child.getAttribute('where')
-        #             propLevel = child.getAttribute('level')
-        #             propType = child.getAttribute('type')
-        #             propFile = child.getAttribute('filename')
-        #             propLine = child.getAttribute('lineno')
-        #             result = result + str('{level:>3}: {type:<10} {where:<10} {filename}:{lineno}\n' \
-        #                                       .format(level=propLevel, type=propType, where=propWhere, lineno=propLine, filename=propFile))
-        #     add_debug_info('stack', result)
-
-        # if res.getAttribute('status') == 'stopping' or res.getAttribute('status') == 'stopped':
-        #     self.view.run_command('moaidebug_clear')
-        #     self.view.run_command('moaidebug_listen')
-        #     sublime.status_message('Moaidebug: Program finished Debugging')
 
     def is_enabled(self):
         if protocol and protocol.connected:
@@ -646,34 +510,7 @@ class MoaidebugContinueCommand(sublime_plugin.TextCommand):
         return False
 
 
-class MoaidebugStopDebugCommand(sublime_plugin.TextCommand):
-    '''
-    Close the socket and stop listening to moaidebug
-    '''
-    def run(self, edit):
-        global protocol
-        try:
-            window = sublime.active_window()
-            window.run_command('hide_panel', {"panel": 'output.moaidebug_inspect'})
-            window.set_layout(original_layout)
-            protocol.clear()
-            reset_current()
-            subprocess.Popen(['killall', 'moai'], stdout=subprocess.PIPE);
-            sublime.active_window().run_command('hide_panel', {"panel": "console"})   
-            global is_debugging
-            is_debugging = False
-        except:
-            pass
-        finally:
-            protocol = None
-
-    def is_enabled(self):
-        global is_debugging
-        if protocol and is_debugging:
-            return True
-        return False
-
-
+# Not yet implemented in menus
 class MoaidebugStatus(sublime_plugin.TextCommand):
     '''
     DBGp status command
@@ -688,7 +525,7 @@ class MoaidebugStatus(sublime_plugin.TextCommand):
             return True
         return False
 
-
+# Not yet implemented in menus. To use in ST3, .begin_edit will need to be changed
 class MoaidebugExecute(sublime_plugin.TextCommand):
     '''
     Execute arbitrary DBGp command
@@ -725,9 +562,8 @@ class MoaidebugExecute(sublime_plugin.TextCommand):
     def on_cancel(self):
         pass
 
+# Run without the debugger
 class MoaidebugJustRun(sublime_plugin.TextCommand):
-
-
     def run(self, edit):
         global is_running 
         is_running = True;
@@ -750,10 +586,8 @@ class MoaidebugJustRun(sublime_plugin.TextCommand):
     def on_cancel(self):
         pass
 
+# This class now will stop the program or both the program and the debugger if they are both active
 class MoaidebugJustStop(sublime_plugin.TextCommand):
-    '''
-    Execute arbitrary DBGp command
-    '''
     def run(self, edit):
         global protocol
         global is_running
@@ -786,38 +620,13 @@ class MoaidebugJustStop(sublime_plugin.TextCommand):
         pass
 
 
-
+# Used to testing purposes only
 class MoaidebugTest(sublime_plugin.TextCommand):
     '''
     Execute arbitrary DBGp command
     '''
     def run(self, edit):
-        
-
-        folders = sublime.active_window().folders()
-        if len(folders) == 0:
-            print('Unable to find code directory')
-            return;
-
-        main_folder = folders[0] + '/'
-
-        launch_folder = sublime.packages_path() + '/Moai Debugger/lua_launchers/'
-        launch_file = launch_folder + 'launch.lua'
-        out_file = open(launch_file, "w+")
-        out_file.write('package.path = "' + launch_folder +  '?.lua;" .. package.path\n')
-        out_file.write('require("debugger")("127.0.0.1", 9000)\n')
-        out_file.write('dofile("main.lua")\n')
-        out_file.close()
-        RunToConsole(['moai', launch_file], main_folder)
-       # sublime.message_dialog(sublime.packages_path() + '/lua_launchers/')
-
-        '''
-        sublime.active_window().run_command('save_all');
-        
-        subprocess.Popen(['moai', 'main.lua'], shell=True, cwd='/Users/davidholtkamp/Dropbox/Deimos/Lua/lua/')
-        
-        
-        '''
+       sublime.message_dialog(sublime.packages_path() + '/lua_launchers/')
     def is_enabled(self):
         return True
     def on_done(self, line):
@@ -827,7 +636,7 @@ class MoaidebugTest(sublime_plugin.TextCommand):
     def on_cancel(self):
         pass
 
-
+# This calss and next function wrap the MoaiDebug view around the defualt view
 class EventListener(sublime_plugin.EventListener):
     def on_new(self, view):
         lookup_view(view).on_new()
@@ -864,9 +673,6 @@ class EventListener(sublime_plugin.EventListener):
 
 
 def lookup_view(v):
-    '''
-    Convert a Sublime View into an MoaidebugView
-    '''
     if isinstance(v, MoaidebugView):
         return v
     if isinstance(v, sublime.View):
@@ -953,11 +759,12 @@ def get_icon_path_for_file(file_name):
     return path
 
 
-
+# Runs a command line program and puts its stdout on the console
 def RunToConsole(args, current_dir = None):
     sublime.set_timeout_async(lambda: run_in_background(args, current_dir), 0)
     
-
+# Reads from the specified program and outputs it to the console. The thread will automatically end once the
+# program terminates
 def run_in_background(args, current_dir):
     proc = None
     if current_dir is None:
@@ -976,7 +783,7 @@ def run_in_background(args, current_dir):
     proc = None
     return
 
-
+# Text command that wraps around the debug window becuase you can't use begin_edit anymore
 class MoaidebugAddDebugInfoCommand(sublime_plugin.TextCommand):
     def run(self, edit, data = None, name = 'none'):
         window = sublime.active_window()
@@ -1001,7 +808,8 @@ class MoaidebugAddDebugInfoCommand(sublime_plugin.TextCommand):
 
 
 
-
+# This function receives many of the incoming messages from Moai. It will continue to call itself on a delay as long
+# as teh protocol is still active
 def check_for_incoming():
     global protocol
     global moaidebug_current
@@ -1084,19 +892,16 @@ def check_for_incoming():
         protocol.sock.settimeout(3)
         sublime.set_timeout(check_for_incoming, 300)
     else:
-        global deubggin_debugger
-        if deubggin_debugger:
+        global debugging_debugger
+        if debugging_debugger:
             print("Killing background connection checker")
 
 
 
 
 
-
+# Adds data to the debug output windows
 def add_debug_info(name, data):
-    '''
-    Adds data to the debug output windows
-    '''
     found = False
     v = None
     window = sublime.active_window()
