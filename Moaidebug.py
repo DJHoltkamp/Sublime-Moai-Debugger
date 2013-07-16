@@ -12,7 +12,7 @@ import sys
 import time
 from xml.dom.minidom import parseString
 
-
+deubggin_debugger = False
 moaidebug_current = None
 original_layout = None
 debug_view = None
@@ -83,8 +83,15 @@ class Protocol(object):
     def read_until_null(self):
         if self.connected:
             while self.bytearray_contains_0(self.buffer) == False:
-                self.buffer += self.sock.recv(self.read_rate)
-                print('Raw Buffer:', self.buffer)
+
+                try:
+                    self.buffer += self.sock.recv(self.read_rate)
+                except:
+                    raise Exception('error', 'timeout')
+
+                global deubggin_debugger
+                if deubggin_debugger:
+                    print('Raw Buffer:', self.buffer)
                 
             index = 0
             for c in self.buffer:
@@ -99,7 +106,10 @@ class Protocol(object):
                         self.buffer = bytearray()
                     else:
                         self.buffer = self.buffer[index + 1:]
-                    print ("returning:'", string_to_return, "'  Leaving:", self.buffer)
+
+                    global deubggin_debugger
+                    if deubggin_debugger:    
+                        print ("returning:'", string_to_return, "'  Leaving:", self.buffer)
                     return string_to_return
                 index = index + 1
 
@@ -129,7 +139,9 @@ class Protocol(object):
         return document
 
     def send(self, command, *args, **kwargs):
-        print("START SEND");
+        global deubggin_debugger
+        if deubggin_debugger:
+            print("START SEND");
         if 'data' in kwargs:
             data = kwargs['data']
             del kwargs['data']
@@ -149,7 +161,9 @@ class Protocol(object):
             command += ' -- ' + base64.b64encode(data)
 
         try:
-            print(command)
+            global deubggin_debugger
+            if deubggin_debugger:
+                print(command)
             self.sock.send(bytes(command, 'ascii') + bytes('\x00', 'ascii'))
             #print '--->', command
         except Exception:
@@ -161,7 +175,7 @@ class Protocol(object):
         if serv:
             try:
                 serv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-                serv.settimeout(1)
+                serv.settimeout(3)
                 serv.bind(('', self.port))
                 serv.listen(1)
                 self.listening = True
@@ -179,7 +193,7 @@ class Protocol(object):
 
             if self.sock:
                 self.connected = True
-                self.sock.settimeout(8)
+                self.sock.settimeout(3)
             else:
                 self.connected = False
                 self.listening = False
@@ -225,8 +239,12 @@ class MoaidebugView(object):
             self.breaks[row] = {}
             if protocol and protocol.connected:
                 protocol.send('breakpoint_set', t='line', f=self.uri(), n=row)
-                res = protocol.read().firstChild
-                self.breaks[row]['id'] = res.getAttribute('id')
+                try:
+                    res = protocol.read().firstChild
+                    self.breaks[row]['id'] = res.getAttribute('id')
+                except:
+                    print("Breakpoint Set Timeout: You may only set breakpoints when paused")
+                
 
     def del_breakpoint(self, row):
         if row in self.breaks:
@@ -388,7 +406,6 @@ class MoaidebugRunDebugCommand(sublime_plugin.TextCommand):
         RunToConsole(['moai', launch_file], main_folder)
 
 
-
     def thread_callback(self):
         protocol.accept()
         if protocol and protocol.connected:
@@ -398,12 +415,15 @@ class MoaidebugRunDebugCommand(sublime_plugin.TextCommand):
         sublime.status_message('Moaidebug: Connected')
         init = protocol.read().firstChild
         uri = init.getAttribute('fileuri')
-        print("The URI", uri)
+        global deubggin_debugger
+        if deubggin_debugger:
+            print("The URI", uri)
 
         for view in buffers.values():
             view.breakpoint_init()
 
         self.view.run_command('moaidebug_continue', {'state': 'run'})
+        sublime.set_timeout(check_for_incoming, 500)
 
     def is_enabled(self):
         global is_debugging
@@ -539,6 +559,8 @@ class MoaidebugContinueCommand(sublime_plugin.TextCommand):
         else:
             self.callback(state)
 
+
+
     def callback(self, state):
         if state == -1:
             return
@@ -547,73 +569,72 @@ class MoaidebugContinueCommand(sublime_plugin.TextCommand):
 
         global moaidebug_current
         reset_current()
-
         protocol.send(state)
-        res = protocol.read().firstChild
+        #res = protocol.read().firstChild
 
-        for child in res.childNodes:
-            if child.nodeName == 'moaidebug:message':
-                #print '>>>break ' + child.getAttribute('filename') + ':' + child.getAttribute('lineno')
-                sublime.status_message('Moaidebug: breakpoint')
-                moaidebug_current = show_file(self.view.window(), child.getAttribute('filename'))
-                moaidebug_current.current(int(child.getAttribute('lineno')))
+        # for child in res.childNodes:
+        #     if child.nodeName == 'moaidebug:message':
+        #         #print '>>>break ' + child.getAttribute('filename') + ':' + child.getAttribute('lineno')
+        #         sublime.status_message('Moaidebug: breakpoint')
+        #         moaidebug_current = show_file(self.view.window(), child.getAttribute('filename'))
+        #         moaidebug_current.current(int(child.getAttribute('lineno')))
 
-        if (res.getAttribute('status') == 'break'):
-            # TODO stack_get
-            protocol.send('context_get')
-            res = protocol.read().firstChild
-            result = ''
+        # if (res.getAttribute('status') == 'break'):
+        #     # TODO stack_get
+        #     protocol.send('context_get')
+        #     res = protocol.read().firstChild
+        #     result = ''
 
-            def getValues(node):
-                result = str('')
-                for child in node.childNodes:
-                    if child.nodeName == 'property':
-                        propName = base64.b64decode(child.getAttribute('fullname')).decode('utf-8')
-                        print("Name!:", propName)
-                        propType = str(child.getAttribute('type'))
-                        propValue = None
+        #     def getValues(node):
+        #         result = str('')
+        #         for child in node.childNodes:
+        #             if child.nodeName == 'property':
+        #                 propName = base64.b64decode(child.getAttribute('fullname')).decode('utf-8')
+        #                 print("Name!:", propName)
+        #                 propType = str(child.getAttribute('type'))
+        #                 propValue = None
                         
-                        try:
+        #                 try:
 
-                            propValue = str(' '.join(base64.b64decode(t.data.strip()).decode('utf-8') for t in child.childNodes if t.nodeType == t.TEXT_NODE or t.nodeType == t.CDATA_SECTION_NODE))
-                        except:
-                            for t in child.childNodes:
-                                if t.nodeType == t.TEXT_NODE or t.nodeType == t.CDATA_SECTION_NODE:
-                                    print ('MY DATA:"' , t.data.strip(), '"')
-                            propValue = str(' '.join(t.data for t in child.childNodes if t.nodeType == t.TEXT_NODE or t.nodeType == t.CDATA_SECTION_NODE))
+        #                     propValue = str(' '.join(base64.b64decode(t.data.strip()).decode('utf-8') for t in child.childNodes if t.nodeType == t.TEXT_NODE or t.nodeType == t.CDATA_SECTION_NODE))
+        #                 except:
+        #                     for t in child.childNodes:
+        #                         if t.nodeType == t.TEXT_NODE or t.nodeType == t.CDATA_SECTION_NODE:
+        #                             print ('MY DATA:"' , t.data.strip(), '"')
+        #                     propValue = str(' '.join(t.data for t in child.childNodes if t.nodeType == t.TEXT_NODE or t.nodeType == t.CDATA_SECTION_NODE))
 
-                        if propName:
-                            if propName.lower().find('password') != -1:
-                                propValue = str('*****')
-                            result = result + str(propName + ' [' + propType + '] = ' + str(propValue) + '\n')
-                            result = result + getValues(child)
-                            if moaidebug_current:
-                                moaidebug_current.add_context_data(propName, propType, propValue)
-                return result
+        #                 if propName:
+        #                     if propName.lower().find('password') != -1:
+        #                         propValue = str('*****')
+        #                     result = result + str(propName + ' [' + propType + '] = ' + str(propValue) + '\n')
+        #                     result = result + getValues(child)
+        #                     if moaidebug_current:
+        #                         moaidebug_current.add_context_data(propName, propType, propValue)
+        #         return result
 
-            result = getValues(res)
-            add_debug_info('context', result)
-            if moaidebug_current:
-                moaidebug_current.on_selection_modified()
+        #     result = getValues(res)
+        #     add_debug_info('context', result)
+        #     if moaidebug_current:
+        #         moaidebug_current.on_selection_modified()
 
-            protocol.send('stack_get')
-            res = protocol.read().firstChild
-            result = str('')
-            for child in res.childNodes:
-                if child.nodeName == 'stack':
-                    propWhere = child.getAttribute('where')
-                    propLevel = child.getAttribute('level')
-                    propType = child.getAttribute('type')
-                    propFile = child.getAttribute('filename')
-                    propLine = child.getAttribute('lineno')
-                    result = result + str('{level:>3}: {type:<10} {where:<10} {filename}:{lineno}\n' \
-                                              .format(level=propLevel, type=propType, where=propWhere, lineno=propLine, filename=propFile))
-            add_debug_info('stack', result)
+        #     protocol.send('stack_get')
+        #     res = protocol.read().firstChild
+        #     result = str('')
+        #     for child in res.childNodes:
+        #         if child.nodeName == 'stack':
+        #             propWhere = child.getAttribute('where')
+        #             propLevel = child.getAttribute('level')
+        #             propType = child.getAttribute('type')
+        #             propFile = child.getAttribute('filename')
+        #             propLine = child.getAttribute('lineno')
+        #             result = result + str('{level:>3}: {type:<10} {where:<10} {filename}:{lineno}\n' \
+        #                                       .format(level=propLevel, type=propType, where=propWhere, lineno=propLine, filename=propFile))
+        #     add_debug_info('stack', result)
 
-        if res.getAttribute('status') == 'stopping' or res.getAttribute('status') == 'stopped':
-            self.view.run_command('moaidebug_clear')
-            self.view.run_command('moaidebug_listen')
-            sublime.status_message('Moaidebug: Page finished executing. Reload to continue debugging.')
+        # if res.getAttribute('status') == 'stopping' or res.getAttribute('status') == 'stopped':
+        #     self.view.run_command('moaidebug_clear')
+        #     self.view.run_command('moaidebug_listen')
+        #     sublime.status_message('Moaidebug: Program finished Debugging')
 
     def is_enabled(self):
         if protocol and protocol.connected:
@@ -734,12 +755,29 @@ class MoaidebugJustStop(sublime_plugin.TextCommand):
     Execute arbitrary DBGp command
     '''
     def run(self, edit):
+        global protocol
         global is_running
-        is_running = False
-        subprocess.Popen(['killall', 'moai'], stdout=subprocess.PIPE);
-        sublime.active_window().run_command('hide_panel', {"panel": "console"})     
+        global is_debugging
+
+
+        try:
+            is_running = False
+            subprocess.Popen(['killall', 'moai'], stdout=subprocess.PIPE);
+            sublime.active_window().run_command('hide_panel', {"panel": "console"})     
+
+            if is_debugging:
+                window = sublime.active_window()
+                window.run_command('hide_panel', {"panel": 'output.moaidebug_inspect'})
+                window.set_layout(original_layout)
+                protocol.clear()
+                is_debugging = False
+        except:
+            pass
+        finally:
+            protocol = None
+
     def is_enabled(self):
-        return is_running
+        return is_running or is_debugging
     def on_done(self, line):
         pass
     def on_change(self, line):
@@ -964,6 +1002,97 @@ class MoaidebugAddDebugInfoCommand(sublime_plugin.TextCommand):
 
 
 
+def check_for_incoming():
+    global protocol
+    global moaidebug_current
+    if protocol and protocol.connected:
+
+        try:
+            protocol.sock.settimeout(.01)
+            while protocol and protocol.connected:
+                res = protocol.read().firstChild
+
+                for child in res.childNodes:
+                    if child.nodeName == 'moaidebug:message':
+                        sublime.status_message('Moaidebug: breakpoint')
+                        moaidebug_current = show_file(self.view.window(), child.getAttribute('filename'))
+                        moaidebug_current.current(int(child.getAttribute('lineno')))
+
+                if (res.getAttribute('status') == 'break'):
+
+                    protocol.send('context_get')
+                    
+                    res = protocol.read().firstChild
+                    result = ''
+
+                    def getValues(node):
+                        result = str('')
+                        for child in node.childNodes:
+                            if child.nodeName == 'property':
+                                propName = base64.b64decode(child.getAttribute('fullname')).decode('utf-8')
+                         
+                                propType = str(child.getAttribute('type'))
+                                propValue = None
+                                
+                                try:
+
+                                    propValue = str(' '.join(base64.b64decode(t.data.strip()).decode('utf-8') for t in child.childNodes if t.nodeType == t.TEXT_NODE or t.nodeType == t.CDATA_SECTION_NODE))
+                                except:
+                                    for t in child.childNodes:
+                                        if t.nodeType == t.TEXT_NODE or t.nodeType == t.CDATA_SECTION_NODE:
+                                            print ('MY DATA:"' , t.data.strip(), '"')
+                                    propValue = str(' '.join(t.data for t in child.childNodes if t.nodeType == t.TEXT_NODE or t.nodeType == t.CDATA_SECTION_NODE))
+
+                                if propName:
+                                    if propName.lower().find('password') != -1:
+                                        propValue = str('*****')
+                                    result = result + str(propName + ' [' + propType + '] = ' + str(propValue) + '\n')
+                                    result = result + getValues(child)
+                                    if moaidebug_current:
+                                        moaidebug_current.add_context_data(propName, propType, propValue)
+                        return result
+
+                    result = getValues(res)
+                    add_debug_info('context', result)
+                    if moaidebug_current:
+                        moaidebug_current.on_selection_modified()
+
+                    protocol.send('stack_get')
+                    #time.sleep(.2)
+                    res = protocol.read().firstChild
+                    result = str('')
+                    for child in res.childNodes:
+                        if child.nodeName == 'stack':
+                            propWhere = child.getAttribute('where')
+                            propLevel = child.getAttribute('level')
+                            propType = child.getAttribute('type')
+                            propFile = child.getAttribute('filename')
+                            propLine = child.getAttribute('lineno')
+                            result = result + str('{level:>3}: {type:<10} {where:<10} {filename}:{lineno}\n' \
+                                                      .format(level=propLevel, type=propType, where=propWhere, lineno=propLine, filename=propFile))
+                    add_debug_info('stack', result)
+
+                if res.getAttribute('status') == 'stopping' or res.getAttribute('status') == 'stopped':
+                    self.view.run_command('moaidebug_clear')
+                    self.view.run_command('moaidebug_listen')
+                    sublime.status_message('Moaidebug: Program finished Debugging')
+        except:
+            did_fail = True  # not currently used
+
+    # Loop this thread until we get disconnected
+    if protocol and protocol.connected:
+        protocol.sock.settimeout(3)
+        sublime.set_timeout(check_for_incoming, 300)
+    else:
+        global deubggin_debugger
+        if deubggin_debugger:
+            print("Killing background connection checker")
+
+
+
+
+
+
 def add_debug_info(name, data):
     '''
     Adds data to the debug output windows
@@ -995,7 +1124,6 @@ def add_debug_info(name, data):
     if found:
         v.set_read_only(False)
         window.set_view_index(v, group, 0)
-        print(type(data))
         v.run_command('moaidebug_add_debug_info', {'name':fullName, 'data':data})
         v.set_read_only(True)
 

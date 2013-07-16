@@ -6,15 +6,16 @@
         "children":
         [
             { "command": "moaidebug_just_run", "caption": "Run Moai Program", "mnemonic": "R"},
-            { "command": "moaidebug_just_stop", "caption": "Stop Moai Program", "mnemonic": "F"},
-            { "caption": "-" },
             { "command": "moaidebug_run_debug", "caption": "Start Debugging", "mnemonic": "D"},
-            { "command": "moaidebug_stop_debug", "caption": "Stop Debugging", "mnemonic": "S"},
+            { "command": "moaidebug_just_stop", "caption": "Stop Moai", "mnemonic": "F"},
+            { "caption": "-" },
             { "command": "moaidebug_clear_all_breakpoints", "caption": "Clear All Breakpoints", "mnemonic": "S"},
+            {"keys": ["ctrl+shift+f5"], "command": "moaidebug_continue", "args": {"state": "run"}, "caption":"Continue"},
+            {"keys": ["ctrl+shift+f6"], "command": "moaidebug_continue", "args": {"state": "step_over"}, "caption":"Step Over"},
+            {"keys": ["ctrl+shift+f7"], "command": "moaidebug_continue", "args": {"state": "step_into"}, "caption":"Step Into"},
+            {"keys": ["ctrl+shift+f8"], "command": "moaidebug_continue", "args": {"state": "step_out"}, "caption":"Step Out"},
             { "caption": "-" },
             { "command": "moaidebug_help", "caption": "Moai Help", "mnemonic": "H"},
-            { "caption": "-" },
-            { "command": "moaidebug_test", "caption": "Test Function", "mnemonic": "T"}
         ]
     }
 ]
